@@ -1,0 +1,145 @@
+Python:
+# Import Libraries
+from textblob import TextBlob  # Text processing and sentiment analysis
+import sys
+import matplotlib.pyplot as plt  # Data visualization
+import pandas as pd  # Data manipulation and analysis
+import numpy as np  # Numerical operations
+import os
+import nltk
+import re  # Regular expressions for text cleaning
+import string
+import seaborn as sns  # Data visualization
+from PIL import Image  # Python Imaging Library for working with images
+from nltk.sentiment.vader import SentimentIntensityAnalyzer  # Sentiment analysis tool
+from nltk.stem import SnowballStemmer
+from sklearn.feature_extraction.text import CountVectorizer  # Convert text data to a matrix of token counts
+
+
+# Read CSV Files and Concatenate
+tweets = pd.concat([
+    pd.read_csv("C:\\Users\\gauta\\Downloads\\archive\\Russia_invade.csv"),
+    pd.read_csv("C:\\Users\\gauta\\Downloads\\archive\\Russian_border_Ukraine.csv"),
+    pd.read_csv("C:\\Users\\gauta\\Downloads\\archive\\Russian_troops.csv"),
+    pd.read_csv("C:\\Users\\gauta\\Downloads\\archive\\StandWithUkraine.csv"),
+    pd.read_csv("C:\\Users\\gauta\\Downloads\\archive\\Ukraine_border.csv"),
+    pd.read_csv("C:\\Users\\gauta\\Downloads\\archive\\Ukraine_nato.csv"),
+    pd.read_csv("C:\\Users\\gauta\\Downloads\\archive\\Ukraine_troops.csv"),
+    pd.read_csv("C:\\Users\\gauta\\Downloads\\archive\\Ukraine_war.csv")
+])
+
+# Remove duplicate tweets
+tweets.drop_duplicates(inplace=True)
+
+# Slice the date and remove the time portion
+tweets['date'] = tweets.date.str.slice(0, 10)
+
+
+# Display unique dates and languages in the dataset
+print(tweets['date'].unique())
+print(tweets["lang"].unique())
+
+
+# Display the shape of the dataset before and after removing non-English tweets
+print("Before removing non-English tweets")
+print(tweets.shape)
+tweets = tweets[tweets['lang'] == 'en']
+print("After removing non-English Tweets")
+print(tweets.shape)
+
+
+# Define functions to clean tweets
+def remove_rt(x): return re.sub('RT @\w+: ', " ", x)
+def rt(x): return re.sub("(@[A-Za-z0-9]+)|([^0-9A-Za-z \t])|(\w+:\/\/\S+)", " ", x)
+
+# Apply tweet cleaning functions
+tweets["content"] = tweets.content.map(remove_rt).map(rt)
+tweets["content"] = tweets.content.str.lower()
+
+# Calculate sentiment scores using TextBlob and VADER
+tweets[['polarity', 'subjectivity']] = tweets['content'].apply(
+    lambda Text: pd.Series(TextBlob(Text).sentiment))
+
+for index, row in tweets['content'].iteritems():
+    score = SentimentIntensityAnalyzer().polarity_scores(row)
+    neg = score['neg']
+    neu = score['neu']
+    pos = score['pos']
+    comp = score['compound']
+
+    # Determine sentiment based on VADER scores
+    if neg > pos:
+        tweets.loc[index, 'sentiment'] = "negative"
+    elif pos > neg:
+        tweets.loc[index, 'sentiment'] = "positive"
+    else:
+        tweets.loc[index, 'sentiment'] = "neutral"
+
+    # Assign individual scores to columns
+    tweets.loc[index, 'neg'] = neg
+    tweets.loc[index, 'neu'] = neu
+    tweets.loc[index, 'pos'] = pos
+    tweets.loc[index, 'compound'] = comp
+
+
+# Display a subset of the sentiment analysis results
+print(tweets[["content", "sentiment", "polarity", "subjectivity", "neg", "neu", "pos"]].head(5))
+
+
+# Calculate and display the percentage of positive, negative, and neutral tweets
+total_pos = len(tweets.loc[tweets['sentiment'] == "positive"])
+total_neg = len(tweets.loc[tweets['sentiment'] == "negative"])
+total_neu = len(tweets.loc[tweets['sentiment'] == "neutral"])
+total_tweets = len(tweets)
+
+print("Total Positive Tweets % : {:.2f}".format((total_pos / total_tweets) * 100))
+print("Total Negative Tweets % : {:.2f}".format((total_neg / total_tweets) * 100))
+print("Total Neutral Tweets % : {:.2f}".format((total_neu / total_tweets) * 100))
+
+
+# Plot a pie chart for the distribution of sentiment
+mylabels = ["Positive", "Negative", "Neutral"]
+mycolors = ["Green", "Red", "Blue"]
+
+plt.figure(figsize=(8, 5), dpi=600)
+myexplode = [0, 0.2, 0]
+plt.pie([total_pos, total_neg, total_neu], colors=mycolors, labels=mylabels, explode=myexplode)
+plt.show()
+
+
+# Analyze sentiment over time and plot a line chart
+pos_list = []
+neg_list = []
+neu_list = []
+
+for i in tweets["date"].unique():
+    temp = tweets[tweets["date"] == i]
+    positive_temp = temp[temp["sentiment"] == "positive"]
+    negative_temp = temp[temp["sentiment"] == "negative"]
+    neutral_temp = temp[temp["sentiment"] == "neutral"]
+    pos_list.append(((positive_temp.shape[0] / temp.shape[0]) * 100, i))
+    neg_list.append(((negative_temp.shape[0] / temp.shape[0]) * 100, i))
+    neu_list.append(((neutral_temp.shape[0] / temp.shape[0]) * 100, i))
+
+neu_list = sorted(neu_list, key=lambda x: x[1])
+pos_list = sorted(pos_list, key=lambda x: x[1])
+neg_list = sorted(neg_list, key=lambda x: x[1])
+
+x_cord_neg = [i[0] for i in neg_list]
+y_cord_neg = [i[1] for i in neg_list]
+
+x_cord_pos = [i[0] for i in pos_list]
+y_cord_pos = [i[1] for i in pos_list]
+
+x_cord_neu = [i[0] for i in neu_list]
+y_cord_neu = [i[1] for i in neu_list]
+
+plt.figure(figsize=(16, 9), dpi=600)
+plt.plot(y_cord_neg, x_cord_neg, label="negative", color="red")
+plt.plot(y_cord_pos, x_cord_pos, label="positive", color="green")
+plt.plot(y_cord_neu, x_cord_neu, label="neutral", color="blue")
+plt.xticks(np.arange(0, len(tweets["date"].unique()) + 1, 5))
+plt.xticks(rotation=90)
+plt.grid(axis='x')
+plt.legend()
+plt.show()
